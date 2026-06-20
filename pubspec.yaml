@@ -10,8 +10,6 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  audioplayers: ^5.2.1
-  permission_handler: ^11.0.1
   android_intent_plus: ^4.0.3
 
 dev_dependencies:
@@ -19,10 +17,3 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  fonts:
-    - family: Inter
-      fonts:
-        - asset: fonts/Inter-Bold.ttf
-          weight: 700
-        - asset: fonts/Inter-Regular.ttf
-          weight: 400
