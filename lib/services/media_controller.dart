@@ -2,6 +2,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/services.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:android_intent_plus/flag.dart';
+import 'voice_assistant.dart';
 
 class MediaController {
   static const MethodChannel _channel = MethodChannel('com.ruthlessmallard.switchbox/mediabutton');
@@ -161,56 +162,15 @@ class MediaController {
     }
   }
 
-  /// Navigate to home location and start navigation
+  /// Navigate to home location using voice assistant
   Future<void> navigateHome() async {
-    developer.log('Navigating home', name: 'SwitchBox');
-    
-    try {
-      // Launch maps with navigation intent
-      final intent = AndroidIntent(
-        action: 'android.intent.action.VIEW',
-        data: 'google.navigation:q=home',
-        package: googleMapsPackage,
-        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
-      );
-      await intent.launch();
-      
-      // Try to trigger start navigation after a delay
-      await Future.delayed(const Duration(milliseconds: 2000));
-      await _triggerNavigationStart();
-    } catch (e) {
-      developer.log('Error navigating home: $e', name: 'SwitchBox');
-    }
+    developer.log('Navigating home via voice assistant', name: 'SwitchBox');
+    await VoiceAssistant.navigateHome();
   }
 
-  /// Find nearby diesel stations and start navigation
+  /// Find nearby diesel stations using voice assistant
   Future<void> findDiesel() async {
-    developer.log('Finding diesel', name: 'SwitchBox');
-    
-    try {
-      final intent = AndroidIntent(
-        action: 'android.intent.action.VIEW',
-        data: 'geo:0,0?q=diesel+fuel+nearby',
-        package: googleMapsPackage,
-        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
-      );
-      await intent.launch();
-      
-      // Can't auto-start without user selecting a station
-      await Future.delayed(const Duration(milliseconds: 2000));
-    } catch (e) {
-      developer.log('Error finding diesel: $e', name: 'SwitchBox');
-    }
-  }
-  
-  /// Attempt to trigger navigation start (best effort)
-  Future<void> _triggerNavigationStart() async {
-    try {
-      // Send a tap event at center of screen via media button
-      // This is a hack - proper way requires accessibility service
-      await _channel.invokeMethod('playPause');
-    } catch (e) {
-      developer.log('Could not trigger nav start: $e', name: 'SwitchBox');
-    }
+    developer.log('Finding diesel via voice assistant', name: 'SwitchBox');
+    await VoiceAssistant.findDieselStation();
   }
 }
