@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../widgets/round_display.dart';
 import '../widgets/chunky_button.dart';
 import '../services/media_controller.dart';
+import '../services/spen_handler.dart';
 
 class ControllerScreen extends StatefulWidget {
   const ControllerScreen({super.key});
@@ -12,9 +13,26 @@ class ControllerScreen extends StatefulWidget {
 
 class _ControllerScreenState extends State<ControllerScreen> {
   final MediaController _mediaController = MediaController();
+  final SPenHandler _spenHandler = SPenHandler();
   String _displayText = 'SWITCHBOX';
   String _subText = 'READY';
   bool _isScrolling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start listening for S Pen button
+    _spenHandler.startListening(() {
+      // S Pen button acts as Button 1 (YT Music)
+      _handleButton1Press();
+    });
+  }
+
+  @override
+  void dispose() {
+    _spenHandler.stopListening();
+    super.dispose();
+  }
 
   void _updateDisplay(String mainText, String subText, {bool scroll = false}) {
     setState(() {
@@ -35,7 +53,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   void _handleButton2Press() {
-    _updateDisplay('AUDIBLE', 'PLAYING', scroll: true);
+    _updateDisplay('AUDIBLE', 'BOOK', scroll: true);
     _mediaController.launchAudible();
   }
 
@@ -45,12 +63,32 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   void _handleButton3Press() {
-    _updateDisplay('CALL', 'DENIED', scroll: true);
-    _mediaController.denyCall();
+    _updateDisplay('PLAY/PAUSE', 'TOGGLE', scroll: true);
+    _mediaController.playPause();
   }
 
   void _handleButton3LongPress() {
-    _updateDisplay('CALL', 'ACCEPTED', scroll: true);
+    _updateDisplay('PREV', 'TRACK', scroll: true);
+    _mediaController.previousTrack();
+  }
+
+  void _handleButton4Press() {
+    _updateDisplay('NAV', 'HOME', scroll: true);
+    _mediaController.navigateHome();
+  }
+
+  void _handleButton4LongPress() {
+    _updateDisplay('SKIP', '-30 SEC', scroll: true);
+    _mediaController.skipBackward30();
+  }
+
+  void _handleButton5Press() {
+    _updateDisplay('FIND', 'DIESEL', scroll: true);
+    _mediaController.findDiesel();
+  }
+
+  void _handleButton5LongPress() {
+    _updateDisplay('ACCEPT', 'CALL', scroll: true);
     _mediaController.acceptCall();
   }
 
@@ -126,13 +164,15 @@ class _ControllerScreenState extends State<ControllerScreen> {
                           ChunkyButton(
                             label: '4',
                             color: const Color(0xFF424242),
-                            onPressed: () => _updateDisplay('NAV', 'HOME'),
+                            onPressed: _handleButton4Press,
+                            onLongPress: _handleButton4LongPress,
                           ),
                           const SizedBox(width: 16),
                           ChunkyButton(
                             label: '5',
                             color: const Color(0xFF424242),
-                            onPressed: () => _updateDisplay('NAV', 'DIESEL'),
+                            onPressed: _handleButton5Press,
+                            onLongPress: _handleButton5LongPress,
                           ),
                         ],
                       ),
