@@ -33,7 +33,9 @@ jobs:
       run: flutter analyze --no-fatal-infos
     
     - name: Build APK
-      run: flutter build apk --release
+      run: |
+        flutter config --enable-android
+        flutter build apk --release
     
     - name: Upload APK
       uses: actions/upload-artifact@v4
