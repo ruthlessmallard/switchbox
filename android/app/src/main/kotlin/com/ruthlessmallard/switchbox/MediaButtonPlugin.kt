@@ -88,21 +88,17 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
             try {
                 val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
                 
-                // Send DOWN event
-                val downEvent = KeyEvent(KeyEvent.ACTION_DOWN, keyCode)
-                val downSent = audioManager.dispatchMediaKeyEvent(downEvent)
+                // Send DOWN event (returns Unit, not Boolean)
+                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
                 
                 // Small delay between events
                 Thread.sleep(50)
                 
                 // Send UP event
-                val upEvent = KeyEvent(KeyEvent.ACTION_UP, keyCode)
-                val upSent = audioManager.dispatchMediaKeyEvent(upEvent)
+                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
                 
-                if (downSent && upSent) {
-                    success = true
-                    android.util.Log.d("SwitchBox", "Media key dispatched: $keyCode")
-                }
+                success = true
+                android.util.Log.d("SwitchBox", "Media key dispatched: $keyCode")
             } catch (e: Exception) {
                 android.util.Log.e("SwitchBox", "dispatchMediaKeyEvent failed: ${e.message}")
             }
