@@ -87,6 +87,9 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
                 "connectAndPlayAudible" -> {
                     launchAndSimulateHeadset(result)
                 }
+                "launchYouTubeMusic" -> {
+                    launchYouTubeMusicNative(result)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -310,6 +313,48 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
         } catch (e: Exception) {
             android.util.Log.e("SwitchBox", "Failed to launch and simulate headset: ${e.message}")
             result.error("LAUNCH_FAILED", "Failed to launch Audible: ${e.message}", null)
+        }
+    }
+
+    private fun launchYouTubeMusicNative(result: MethodChannel.Result) {
+        try {
+            // Check if YouTube Music is installed
+            val packageManager = context.packageManager
+            val launchIntent = packageManager.getLaunchIntentForPackage("com.google.android.apps.youtube.music")
+            
+            if (launchIntent == null) {
+                android.util.Log.w("SwitchBox", "YouTube Music not installed")
+                result.success("not_installed")
+                return
+            }
+            
+            // Launch YouTube Music
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(launchIntent)
+            android.util.Log.d("SwitchBox", "YouTube Music launched, waiting for it to become foreground")
+            
+            // Wait 3 seconds for YouTube Music to become foreground
+            Thread {
+                Thread.sleep(3000)
+                
+                // Simulate headset PLAY button - this should trigger YT Music to resume
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                
+                // Send PLAY key event
+                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                Thread.sleep(50)
+                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                
+                android.util.Log.d("SwitchBox", "Headset PLAY button simulated for YouTube Music")
+                
+                Handler(Looper.getMainLooper()).post {
+                    result.success("launched_and_played")
+                }
+            }.start()
+            
+        } catch (e: Exception) {
+            android.util.Log.e("SwitchBox", "Failed to launch YouTube Music: ${e.message}")
+            result.error("LAUNCH_FAILED", "Failed to launch YouTube Music: ${e.message}", null)
         }
     }
 }

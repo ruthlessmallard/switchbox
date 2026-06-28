@@ -14,38 +14,21 @@ class MediaController {
 
   /// Launch YouTube Music and start playing
   Future<void> launchYouTubeMusic() async {
-    developer.log('Launching YouTube Music', name: 'SwitchBox');
-    
-    try {
-      // Try launching with VIEW intent first (more reliable)
-      final intent = AndroidIntent(
-        action: 'android.intent.action.VIEW',
-        data: 'vnd.youtube.music://',
-        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
-      );
-      await intent.launch();
-      
-      // Wait for app to come to foreground
-      await Future.delayed(const Duration(milliseconds: 1500));
-      await _sendMediaPlay();
-    } catch (e) {
-      developer.log('Error launching YT Music: $e, trying fallback', name: 'SwitchBox');
-      _fallbackLaunchYT();
-    }
-  }
+    developer.log('Launching YouTube Music via native platform channel', name: 'SwitchBox');
 
-  void _fallbackLaunchYT() async {
     try {
-      final intent = AndroidIntent(
-        action: 'android.intent.action.MAIN',
-        package: youtubeMusicPackage,
-        flags: [Flag.FLAG_ACTIVITY_NEW_TASK, Flag.FLAG_ACTIVITY_CLEAR_TOP],
-      );
-      await intent.launch();
-      await Future.delayed(const Duration(milliseconds: 1500));
-      await _sendMediaPlay();
+      // Use native platform channel to launch YT Music and simulate headset play
+      final result = await _channel.invokeMethod('launchYouTubeMusic');
+
+      if (result == 'launched_and_played') {
+        developer.log('YouTube Music launched and play sent', name: 'SwitchBox');
+      } else if (result == 'not_installed') {
+        developer.log('YouTube Music not installed', name: 'SwitchBox');
+      } else {
+        developer.log('YouTube Music launch returned: $result', name: 'SwitchBox');
+      }
     } catch (e) {
-      developer.log('Fallback also failed: $e', name: 'SwitchBox');
+      developer.log('Error launching YT Music: $e', name: 'SwitchBox');
     }
   }
 
