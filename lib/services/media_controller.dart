@@ -1,7 +1,5 @@
 import 'dart:developer' as developer;
 import 'package:flutter/services.dart';
-import 'package:android_intent_plus/android_intent.dart';
-import 'package:android_intent_plus/flag.dart';
 import 'voice_assistant.dart';
 
 class MediaController {
@@ -67,19 +65,6 @@ class MediaController {
       await _channel.invokeMethod('playPause');
     } catch (e) {
       developer.log('Error sending playPause: $e', name: 'SwitchBox');
-    }
-  }
-
-  /// Send play command - toggles twice to ensure play state
-  Future<void> _sendMediaPlay() async {
-    developer.log('Sending PLAY command', name: 'SwitchBox');
-    try {
-      // Send playPause twice to ensure toggle to play state
-      await _channel.invokeMethod('playPause');
-      await Future.delayed(const Duration(milliseconds: 300));
-      await _channel.invokeMethod('playPause');
-    } catch (e) {
-      developer.log('Error sending play: $e', name: 'SwitchBox');
     }
   }
 
