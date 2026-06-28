@@ -342,7 +342,7 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
                         }
                         
                         val keyCode = keyEvent?.keyCode?.toString() ?: "none"
-                        val pkg = it.`package` ?: it.getSender() ?: "unknown"
+                        val pkg = it.`package` ?: "unknown"
                         
                         addLog("MEDIA_BUTTON from $pkg: $keyCode")
                     }
