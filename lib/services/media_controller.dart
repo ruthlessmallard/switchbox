@@ -54,33 +54,33 @@ class MediaController {
     developer.log('Launching Audible', name: 'SwitchBox');
     
     try {
-      // Try with explicit component name first
+      // Try package-only launch first (Audible doesn't expose .MainActivity)
       final intent = AndroidIntent(
         action: 'android.intent.action.MAIN',
         package: audiblePackage,
-        componentName: '$audiblePackage/.MainActivity',
         flags: [Flag.FLAG_ACTIVITY_NEW_TASK, Flag.FLAG_ACTIVITY_CLEAR_TOP],
       );
       await intent.launch();
       
       // Audible needs more time to initialize
-      await Future.delayed(const Duration(milliseconds: 2000));
+      await Future.delayed(const Duration(milliseconds: 3000));
       await _sendMediaPlay();
     } catch (e) {
-      developer.log('Component launch failed: $e, trying package only', name: 'SwitchBox');
+      developer.log('Package launch failed: $e, trying intent URI fallback', name: 'SwitchBox');
       _fallbackLaunchAudible();
     }
   }
   
   void _fallbackLaunchAudible() async {
     try {
+      // Fallback: use intent URI structure
       final intent = AndroidIntent(
-        action: 'android.intent.action.MAIN',
-        package: audiblePackage,
-        flags: [Flag.FLAG_ACTIVITY_NEW_TASK, Flag.FLAG_ACTIVITY_CLEAR_TOP],
+        action: 'android.intent.action.VIEW',
+        data: 'intent://#Intent;package=$audiblePackage;end',
+        flags: [Flag.FLAG_ACTIVITY_NEW_TASK],
       );
       await intent.launch();
-      await Future.delayed(const Duration(milliseconds: 2000));
+      await Future.delayed(const Duration(milliseconds: 3000));
       await _sendMediaPlay();
     } catch (e) {
       developer.log('Fallback also failed: $e', name: 'SwitchBox');
