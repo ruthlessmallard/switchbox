@@ -58,11 +58,18 @@ class MediaController {
       // Use native platform channel to launch Audible AND play with proper timing
       final result = await _channel.invokeMethod('launchAndPlayAudible', {'delayMs': delayMs});
       
-      if (result == true) {
-        developer.log('Audible launched and play sent successfully', name: 'SwitchBox');
+      // Handle status string returns from native side
+      if (result == 'audible_active_played') {
+        developer.log('Audible launched, session detected, play sent', name: 'SwitchBox');
         return true;
+      } else if (result == 'timeout_played') {
+        developer.log('Audible launched, timeout waiting for session, play sent anyway', name: 'SwitchBox');
+        return true;
+      } else if (result == 'failed') {
+        developer.log('Audible not installed', name: 'SwitchBox');
+        return false;
       } else {
-        developer.log('Audible not installed or play failed', name: 'SwitchBox');
+        developer.log('Audible launch/play returned: $result', name: 'SwitchBox');
         return false;
       }
     } catch (e) {
