@@ -298,6 +298,7 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
 
             var connectionTimedOut = false
             val connectionTimeoutHandler = Handler(Looper.getMainLooper())
+            var browser: MediaBrowser? = null
             
             val connectionCallbacks = object : MediaBrowser.ConnectionCallback() {
                 override fun onConnected() {
@@ -309,24 +310,26 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
                         return
                     }
                     
-                    try {
-                        val sessionToken = browser.sessionToken
-                        val controller = MediaController(context, sessionToken)
-                        
-                        android.util.Log.d("SwitchBox", "MediaBrowser connected to Audible, sending play command")
-                        controller.transportControls.play()
-                        
-                        // Disconnect after sending command
-                        Handler(Looper.getMainLooper()).postDelayed({
-                            browser.disconnect()
-                        }, 1000)
-                        
-                        result.success("connected_and_played")
-                    } catch (e: Exception) {
-                        android.util.Log.e("SwitchBox", "Failed to get MediaController or send play: ${e.message}")
-                        browser.disconnect()
-                        // Fallback to old method
-                        launchAndPlayAudible(result, 4500)
+                    browser?.let {
+                        try {
+                            val sessionToken = it.sessionToken
+                            val controller = MediaController(context, sessionToken)
+                            
+                            android.util.Log.d("SwitchBox", "MediaBrowser connected to Audible, sending play command")
+                            controller.transportControls.play()
+                            
+                            // Disconnect after sending command
+                            Handler(Looper.getMainLooper()).postDelayed({
+                                it.disconnect()
+                            }, 1000)
+                            
+                            result.success("connected_and_played")
+                        } catch (e: Exception) {
+                            android.util.Log.e("SwitchBox", "Failed to get MediaController or send play: ${e.message}")
+                            it.disconnect()
+                            // Fallback to old method
+                            launchAndPlayAudible(result, 4500)
+                        }
                     }
                 }
 
@@ -343,7 +346,7 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
             }
 
             // Create MediaBrowser connection to Audible's MediaBrowserService
-            val browser = MediaBrowser(
+            browser = MediaBrowser(
                 context,
                 ComponentName("com.audible.application", "com.audible.application.media.AudibleMediaBrowserService"),
                 connectionCallbacks,
@@ -354,7 +357,7 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
             connectionTimeoutHandler.postDelayed({
                 connectionTimedOut = true
                 try {
-                    browser.disconnect()
+                    browser?.disconnect()
                 } catch (e: Exception) {
                     // Ignore
                 }
