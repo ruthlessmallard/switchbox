@@ -6,9 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
-import android.media.session.MediaController
 import android.media.session.MediaSession
-import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
@@ -297,18 +295,15 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
 }
 
 /**
- * MediaDiagnosticRecorder - Singleton for recording media button events and session state changes
- * for diagnostic purposes.
+ * MediaDiagnosticRecorder - Singleton for recording media button events via BroadcastReceiver
+ * for diagnostic purposes. Uses ACTION_MEDIA_BUTTON broadcast only - no system permissions needed.
  */
 class MediaDiagnosticRecorder private constructor(private val context: Context) {
     
     private val logList = mutableListOf<String>()
     private var isRecording = false
     private val maxLogSize = 100
-    private var mediaSessionManager: MediaSessionManager? = null
-    private var activeControllers: List<MediaController>? = null
-    private val handler = Handler(Looper.getMainLooper())
-    private val pollRunnable = Runnable { pollActiveSessions() }
+    private var mediaButtonReceiver: BroadcastReceiver? = null
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     
     companion object {
@@ -324,33 +319,6 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         }
     }
     
-    private val mediaButtonReceiver = object : BroadcastReceiver() {
-        override fun onReceive(ctx: Context?, intent: Intent?) {
-            if (!isRecording) return
-            
-            intent?.let { 
-                val action = it.action
-                if (action == Intent.ACTION_MEDIA_BUTTON || action == "android.media.MEDIA_KEY_EVENT") {
-                    val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        it.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        it.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
-                    }
-                    
-                    keyEvent?.let { event ->
-                        // Only log on ACTION_UP to avoid duplicates
-                        if (event.action == KeyEvent.ACTION_UP) {
-                            val keyName = getKeyEventName(event.keyCode)
-                            val sourcePackage = it.`package` ?: "unknown"
-                            addLog("MEDIA_BUTTON from $sourcePackage: $keyName")
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
     fun startRecording() {
         if (isRecording) return
         
@@ -359,31 +327,39 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         addLog("Recording started")
         
         // Register media button receiver
-        try {
-            val filter = IntentFilter().apply {
-                addAction(Intent.ACTION_MEDIA_BUTTON)
-                addAction("android.media.MEDIA_KEY_EVENT")
+        mediaButtonReceiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (!isRecording) return
+                
+                intent?.let { 
+                    val action = it.action
+                    if (action == Intent.ACTION_MEDIA_BUTTON) {
+                        val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            it.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            it.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                        }
+                        
+                        val keyCode = keyEvent?.keyCode?.toString() ?: "none"
+                        val pkg = it.`package` ?: it.getSender() ?: "unknown"
+                        
+                        addLog("MEDIA_BUTTON from $pkg: $keyCode")
+                    }
+                }
             }
+        }
+        
+        try {
+            val filter = IntentFilter(Intent.ACTION_MEDIA_BUTTON)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(mediaButtonReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
                 context.registerReceiver(mediaButtonReceiver, filter)
             }
+            addLog("Receiver registered for ACTION_MEDIA_BUTTON")
         } catch (e: Exception) {
             addLog("ERROR: Failed to register receiver: ${e.message}")
-        }
-        
-        // Initialize MediaSessionManager for polling
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                mediaSessionManager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as? MediaSessionManager
-                // Get initial controllers
-                activeControllers = mediaSessionManager?.getActiveSessions(null)
-                // Start polling
-                pollActiveSessions()
-            } catch (e: Exception) {
-                addLog("ERROR: MediaSessionManager failed: ${e.message}")
-            }
         }
     }
     
@@ -391,14 +367,14 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         isRecording = false
         
         // Unregister receiver
-        try {
-            context.unregisterReceiver(mediaButtonReceiver)
-        } catch (e: Exception) {
-            // Receiver may not be registered
+        mediaButtonReceiver?.let {
+            try {
+                context.unregisterReceiver(it)
+            } catch (e: Exception) {
+                // Receiver may not be registered
+            }
+            mediaButtonReceiver = null
         }
-        
-        // Stop polling
-        handler.removeCallbacks(pollRunnable)
         
         addLog("Recording stopped")
         return getLog()
@@ -420,80 +396,6 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         // Keep only last 100 entries
         while (logList.size > maxLogSize) {
             logList.removeAt(0)
-        }
-    }
-    
-    private fun pollActiveSessions() {
-        if (!isRecording) return
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            try {
-                val currentControllers = mediaSessionManager?.getActiveSessions(null)
-                
-                // Track session changes
-                val prevPackages = activeControllers?.map { it.packageName }?.toSet() ?: emptySet()
-                val currentPackages = currentControllers?.map { it.packageName }?.toSet() ?: emptySet()
-                
-                // New sessions
-                for (controller in currentControllers ?: emptyList()) {
-                    if (controller.packageName !in prevPackages) {
-                        val state = controller.playbackState?.let { getPlaybackStateName(it.state) } ?: "UNKNOWN"
-                        addLog("SESSION_CHANGED: ${controller.packageName} - $state (new)")
-                    } else {
-                        // Check for state changes in existing sessions
-                        val prevController = activeControllers?.find { it.packageName == controller.packageName }
-                        val prevState = prevController?.playbackState?.let { getPlaybackStateName(it.state) }
-                        val currentState = controller.playbackState?.let { getPlaybackStateName(it.state) }
-                        
-                        if (prevState != currentState && currentState != null) {
-                            addLog("SESSION_CHANGED: ${controller.packageName} - $currentState")
-                        }
-                    }
-                }
-                
-                // Sessions that stopped
-                for (packageName in prevPackages - currentPackages) {
-                    addLog("SESSION_CHANGED: $packageName - STOPPED")
-                }
-                
-                activeControllers = currentControllers
-            } catch (e: Exception) {
-                // Silent fail during polling
-            }
-        }
-        
-        // Schedule next poll in 500ms
-        handler.postDelayed(pollRunnable, 500)
-    }
-    
-    private fun getPlaybackStateName(state: Int): String {
-        return when (state) {
-            PlaybackState.STATE_PLAYING -> "PLAYING"
-            PlaybackState.STATE_PAUSED -> "PAUSED"
-            PlaybackState.STATE_STOPPED -> "STOPPED"
-            PlaybackState.STATE_BUFFERING -> "BUFFERING"
-            PlaybackState.STATE_CONNECTING -> "CONNECTING"
-            PlaybackState.STATE_ERROR -> "ERROR"
-            PlaybackState.STATE_FAST_FORWARDING -> "FAST_FORWARDING"
-            PlaybackState.STATE_REWINDING -> "REWINDING"
-            PlaybackState.STATE_SKIPPING_TO_NEXT -> "SKIPPING_TO_NEXT"
-            PlaybackState.STATE_SKIPPING_TO_PREVIOUS -> "SKIPPING_TO_PREVIOUS"
-            PlaybackState.STATE_NONE -> "NONE"
-            else -> "STATE_$state"
-        }
-    }
-    
-    private fun getKeyEventName(keyCode: Int): String {
-        return when (keyCode) {
-            KeyEvent.KEYCODE_MEDIA_PLAY -> "PLAY"
-            KeyEvent.KEYCODE_MEDIA_PAUSE -> "PAUSE"
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> "PLAY_PAUSE"
-            KeyEvent.KEYCODE_MEDIA_STOP -> "STOP"
-            KeyEvent.KEYCODE_MEDIA_NEXT -> "NEXT"
-            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> "PREVIOUS"
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> "FAST_FORWARD"
-            KeyEvent.KEYCODE_MEDIA_REWIND -> "REWIND"
-            else -> "KEY_CODE_$keyCode"
         }
     }
 }
