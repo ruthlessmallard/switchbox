@@ -337,15 +337,22 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
             Thread {
                 Thread.sleep(3000)
                 
-                // Simulate headset PLAY button - this should trigger YT Music to resume
-                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                // Send explicit media button intent directly to YouTube Music
+                // This ensures the play command goes to YT Music even if Audible was last active
+                val downIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    setPackage("com.google.android.apps.youtube.music")
+                    putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                }
+                val upIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
+                    setPackage("com.google.android.apps.youtube.music")
+                    putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                }
                 
-                // Send PLAY key event
-                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
+                context.sendBroadcast(downIntent)
                 Thread.sleep(50)
-                audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
+                context.sendBroadcast(upIntent)
                 
-                android.util.Log.d("SwitchBox", "Headset PLAY button simulated for YouTube Music")
+                android.util.Log.d("SwitchBox", "Explicit PLAY intent sent to YouTube Music")
                 
                 Handler(Looper.getMainLooper()).post {
                     result.success("launched_and_played")
