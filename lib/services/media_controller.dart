@@ -135,6 +135,34 @@ class MediaController {
     }
   }
 
+  /// Reject incoming call and send SMS reply
+  Future<void> rejectCallWithSms() async {
+    developer.log('Rejecting call with SMS', name: 'SwitchBox');
+    
+    try {
+      // Step 1: Reject the call
+      await _channel.invokeMethod('rejectCall');
+      
+      // Step 2: Send SMS (platform handles the message)
+      await _channel.invokeMethod('sendSmsReply');
+      
+      developer.log('Call rejected and SMS sent', name: 'SwitchBox');
+    } catch (e) {
+      developer.log('Error rejecting call with SMS: $e', name: 'SwitchBox');
+    }
+  }
+
+  /// Activate Gemini voice assistant
+  Future<void> activateGemini() async {
+    developer.log('Activating Gemini', name: 'SwitchBox');
+    
+    try {
+      await _channel.invokeMethod('activateGemini');
+    } catch (e) {
+      developer.log('Error activating Gemini: $e', name: 'SwitchBox');
+    }
+  }
+
   /// Navigate to home location using voice assistant
   Future<void> navigateHome() async {
     developer.log('Navigating home via voice assistant', name: 'SwitchBox');

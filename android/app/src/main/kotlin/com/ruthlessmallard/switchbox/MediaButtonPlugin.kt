@@ -92,8 +92,112 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
                     MediaDiagnosticRecorder.getInstance(context).clearLog()
                     result.success(null)
                 }
+                "rejectCall" -> {
+                    rejectCall(result)
+                }
+                "sendSmsReply" -> {
+                    sendSmsReply(result)
+                }
+                "activateGemini" -> {
+                    activateGemini(result)
+                }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /**
+     * Reject an incoming phone call.
+     * Requires CALL_PHONE permission.
+     */
+    private fun rejectCall(result: MethodChannel.Result) {
+        try {
+            // Use TelecomManager to end call if we have permission
+            val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as? android.telecom.TelecomManager
+            if (telecomManager != null) {
+                // This requires android.permission.CALL_PHONE and android.permission.ANSWER_PHONE_CALLS
+                telecomManager.endCall()
+                android.util.Log.d(TAG, "Call rejected via TelecomManager")
+                result.success(true)
+            } else {
+                // Fallback: send broadcast that call apps might listen to
+                val intent = Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS)
+                context.sendBroadcast(intent)
+                android.util.Log.d(TAG, "Call reject attempted via broadcast fallback")
+                result.success(false)
+            }
+        } catch (e: SecurityException) {
+            android.util.Log.e(TAG, "No permission to reject call: ${e.message}")
+            result.error("NO_PERMISSION", "Missing phone call permissions", null)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to reject call: ${e.message}")
+            result.error("REJECT_FAILED", "${e.message}", null)
+        }
+    }
+
+    /**
+     * Send SMS reply to last caller.
+     * Opens SMS app with pre-filled message — user must confirm send.
+     */
+    private fun sendSmsReply(result: MethodChannel.Result) {
+        try {
+            val smsIntent = Intent(Intent.ACTION_VIEW).apply {
+                type = "vnd.android-dir/mms-sms"
+                // No specific number — user sees recent contacts or composes
+                putExtra("sms_body", "Driving service truck. Will call back.")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            if (smsIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(smsIntent)
+                android.util.Log.d(TAG, "SMS app opened with message")
+                result.success(true)
+            } else {
+                // Fallback to generic SENDTO
+                val fallbackIntent = Intent(Intent.ACTION_SENDTO).apply {
+                    data = android.net.Uri.parse("smsto:")
+                    putExtra("sms_body", "Driving service truck. Will call back.")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(fallbackIntent)
+                result.success(true)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to open SMS: ${e.message}")
+            result.error("SMS_FAILED", "${e.message}", null)
+        }
+    }
+
+    /**
+     * Activate Gemini voice assistant.
+     * Launches Google app with voice search hotword.
+     */
+    private fun activateGemini(result: MethodChannel.Result) {
+        try {
+            // Try Google app voice search first
+            val googleIntent = Intent(Intent.ACTION_VOICE_COMMAND).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            if (googleIntent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(googleIntent)
+                android.util.Log.d(TAG, "Gemini/Google voice activated")
+                result.success(true)
+            } else {
+                // Fallback: try Google app search
+                val fallbackIntent = context.packageManager.getLaunchIntentForPackage("com.google.android.googlequicksearchbox")
+                if (fallbackIntent != null) {
+                    fallbackIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(fallbackIntent)
+                    android.util.Log.d(TAG, "Google app launched")
+                    result.success(true)
+                } else {
+                    result.success(false)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to activate Gemini: ${e.message}")
+            result.error("GEMINI_FAILED", "${e.message}", null)
         }
     }
 
