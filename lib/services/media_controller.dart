@@ -13,40 +13,42 @@ class MediaController {
 
   /// Launch YouTube Music and start playing
   Future<void> launchYouTubeMusic() async {
-    developer.log('Launching YouTube Music via native platform channel', name: 'SwitchBox');
+    developer.log('Launching YouTube Music', name: 'SwitchBox');
 
     try {
-      // Use native platform channel - launch + targeted play in one call
-      final result = await _channel.invokeMethod('launchYouTubeMusic');
+      // Step 1: Launch YouTube Music via VIEW intent (android_intent_plus)
+      final intent = AndroidIntent(
+        action: 'android.intent.action.VIEW',
+        package: youtubeMusicPackage,
+      );
+      await intent.launch();
+      developer.log('YouTube Music launched via VIEW intent', name: 'SwitchBox');
 
-      if (result == 'launched_and_played') {
-        developer.log('YouTube Music launched and play sent', name: 'SwitchBox');
-      } else if (result == 'not_installed') {
-        developer.log('YouTube Music not installed', name: 'SwitchBox');
-      } else {
-        developer.log('YouTube Music launch returned: $result', name: 'SwitchBox');
+      // Step 2: Wait for app to initialize
+      await Future.delayed(const Duration(milliseconds: 4000));
+
+      // Step 3: Send play via platform channel (global media key)
+      final result = await _channel.invokeMethod('sendMediaPlay');
+      if (result == true) {
+        developer.log('Play command sent to YouTube Music', name: 'SwitchBox');
       }
     } catch (e) {
       developer.log('Error launching YT Music: $e', name: 'SwitchBox');
     }
   }
 
-  /// Launch Audible and resume last book using MediaBrowser connection
-  /// Falls back to launchAndPlayAudible if MediaBrowser fails
+  /// Launch Audible and resume last book using global headset simulation
   Future<bool> launchAudible({int delayMs = 4500}) async {
-    developer.log('Launching Audible via MediaBrowser connection', name: 'SwitchBox');
+    developer.log('Launching Audible via global headset simulation', name: 'SwitchBox');
 
     try {
-      // Try new MediaBrowser connection method first (proper Android media framework)
-      final result = await _channel.invokeMethod('connectAndPlayAudible');
-      
-      if (result == 'connected_played') {
-        developer.log('Audible connected via MediaBrowser, play sent', name: 'SwitchBox');
+      // Use launchAndPlayAudible which uses dispatchMediaKeyEvent (global headset sim)
+      final result = await _channel.invokeMethod('launchAndPlayAudible');
+
+      if (result == 'launched_and_playing' || result == 'launched_and_played') {
+        developer.log('Audible launched and playback initiated via MediaSessionManager', name: 'SwitchBox');
         return true;
-      } else if (result == 'fallback_launched') {
-        developer.log('MediaBrowser failed, fell back to launchAndPlayAudible', name: 'SwitchBox');
-        return true;
-      } else if (result == 'failed') {
+      } else if (result == 'not_installed') {
         developer.log('Audible not installed', name: 'SwitchBox');
         return false;
       } else {
@@ -54,7 +56,7 @@ class MediaController {
         return false;
       }
     } catch (e) {
-      developer.log('Audible MediaBrowser connection failed: $e', name: 'SwitchBox');
+      developer.log('Error launching Audible: $e', name: 'SwitchBox');
       return false;
     }
   }

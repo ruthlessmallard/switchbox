@@ -1,12 +1,11 @@
 package com.ruthlessmallard.switchbox
 
-import android.app.ActivityManager
-import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.media.AudioManager
-import android.media.session.MediaSession
+import android.media.session.MediaController
+import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.Build
 import android.os.Handler
@@ -22,31 +21,13 @@ import java.util.Locale
 class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCallHandler {
     companion object {
         const val CHANNEL = "com.ruthlessmallard.switchbox/mediabutton"
-        private var mediaSession: MediaSession? = null
+        private const val AUDIBLE_PACKAGE = "com.audible.application"
+        private const val YOUTUBE_MUSIC_PACKAGE = "com.google.android.apps.youtube.music"
+        private const val TAG = "SwitchBox"
         
         fun registerWith(engine: FlutterEngine, context: Context) {
             val channel = MethodChannel(engine.dartExecutor.binaryMessenger, CHANNEL)
             channel.setMethodCallHandler(MediaButtonPlugin(context))
-            
-            // Initialize media session for better media control
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                try {
-                    mediaSession = MediaSession(context, "SwitchBox").apply {
-                        setPlaybackState(PlaybackState.Builder()
-                            .setState(PlaybackState.STATE_PLAYING, 0, 1.0f)
-                            .setActions(PlaybackState.ACTION_PLAY or 
-                                       PlaybackState.ACTION_PAUSE or
-                                       PlaybackState.ACTION_SKIP_TO_NEXT or
-                                       PlaybackState.ACTION_SKIP_TO_PREVIOUS or
-                                       PlaybackState.ACTION_FAST_FORWARD or
-                                       PlaybackState.ACTION_REWIND)
-                            .build())
-                        isActive = true
-                    }
-                } catch (e: Exception) {
-                    android.util.Log.e("SwitchBox", "MediaSession init failed: ${e.message}")
-                }
-            }
         }
     }
 
@@ -88,11 +69,14 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
                     launchAndPlayAudible(result)
                 }
                 "launchYouTubeMusic" -> {
-                    launchYouTubeMusicNative(result)
+                    launchYouTubeMusic(result)
+                }
+                "sendMediaPlay" -> {
+                    _sendMediaPlay(result)
                 }
                 "playPauseYT" -> {
                     val keyCode = call.argument<Int>("keyCode") ?: KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
-                    sendMediaButtonToPackage(keyCode, "com.google.android.apps.youtube.music")
+                    sendMediaButtonToPackage(keyCode, YOUTUBE_MUSIC_PACKAGE)
                     result.success(null)
                 }
                 "startRecording" -> {
@@ -115,72 +99,126 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
         }
     }
 
+    /**
+     * Get active media sessions via MediaSessionManager.
+     * Requires NotificationListenerService to be connected and user-granted.
+     */
+    private fun getActiveMediaSessions(): List<MediaController> {
+        return try {
+            val mediaSessionManager = context.getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
+            val componentName = ComponentName(context, SwitchBoxNotificationListener::class.java)
+            mediaSessionManager.getActiveSessions(componentName)
+        } catch (e: SecurityException) {
+            android.util.Log.e(TAG, "Notification listener access not granted: ${e.message}")
+            emptyList()
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to get active sessions: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Pause YouTube Music specifically, using its MediaController.
+     * Prevents audio focus fights when launching Audible.
+     */
+    private fun pauseYouTubeMusic() {
+        val sessions = getActiveMediaSessions()
+        val ytmController = sessions.firstOrNull { it.packageName == YOUTUBE_MUSIC_PACKAGE }
+        
+        if (ytmController != null) {
+            try {
+                ytmController.transportControls.pause()
+                android.util.Log.d(TAG, "YouTube Music paused via MediaController")
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to pause YouTube Music: ${e.message}")
+            }
+        } else {
+            android.util.Log.d(TAG, "YouTube Music session not found, may already be paused")
+        }
+    }
+
+    /**
+     * Play Audible using its specific MediaController with retry logic.
+     * Audible takes 500-1500ms after launch to register its MediaSession.
+     */
+    private fun playAudibleWithRetry(attempt: Int = 0, maxAttempts: Int = 8) {
+        val sessions = getActiveMediaSessions()
+        val audibleController = sessions.firstOrNull { it.packageName == AUDIBLE_PACKAGE }
+        
+        if (audibleController != null) {
+            try {
+                audibleController.transportControls.play()
+                android.util.Log.d(TAG, "Audible playback started via MediaController")
+                return
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to play Audible: ${e.message}")
+            }
+        }
+        
+        if (attempt < maxAttempts) {
+            // Exponential backoff: 400ms, 600ms, 800ms, etc.
+            val delay = 400 + (attempt * 200)
+            android.util.Log.d(TAG, "Audible session not ready, retrying in ${delay}ms (attempt ${attempt + 1}/$maxAttempts)")
+            
+            Handler(Looper.getMainLooper()).postDelayed({
+                playAudibleWithRetry(attempt + 1, maxAttempts)
+            }, delay.toLong())
+        } else {
+            android.util.Log.w(TAG, "Audible session never appeared after $maxAttempts attempts")
+            // Fallback to global media key as last resort
+            sendMediaButton(KeyEvent.KEYCODE_MEDIA_PLAY)
+        }
+    }
+
     private fun launchAudible(result: MethodChannel.Result) {
         try {
             val packageManager = context.packageManager
-            val launchIntent = packageManager.getLaunchIntentForPackage("com.audible.application")
+            val launchIntent = packageManager.getLaunchIntentForPackage(AUDIBLE_PACKAGE)
             
             if (launchIntent != null) {
-                // Add FLAG_ACTIVITY_NEW_TASK since we're starting from a non-Activity context
                 launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 context.startActivity(launchIntent)
                 result.success(true)
-                android.util.Log.d("SwitchBox", "Audible launched successfully")
+                android.util.Log.d(TAG, "Audible launched successfully")
             } else {
-                // Audible not installed
                 result.success(false)
-                android.util.Log.w("SwitchBox", "Audible not installed")
+                android.util.Log.w(TAG, "Audible not installed")
             }
         } catch (e: Exception) {
-            android.util.Log.e("SwitchBox", "Failed to launch Audible: ${e.message}")
+            android.util.Log.e(TAG, "Failed to launch Audible: ${e.message}")
             result.error("LAUNCH_FAILED", "Failed to launch Audible: ${e.message}", null)
         }
     }
 
     private fun launchAndPlayAudible(result: MethodChannel.Result) {
         try {
-            // Check if Audible is installed
             val packageManager = context.packageManager
-            val launchIntent = packageManager.getLaunchIntentForPackage("com.audible.application")
+            val launchIntent = packageManager.getLaunchIntentForPackage(AUDIBLE_PACKAGE)
             
             if (launchIntent == null) {
-                android.util.Log.w("SwitchBox", "Audible not installed")
+                android.util.Log.w(TAG, "Audible not installed")
                 result.success("not_installed")
                 return
             }
             
-            // Launch Audible
+            // Step 1: Pause YouTube Music if it's playing (prevents audio focus fights)
+            pauseYouTubeMusic()
+            
+            // Step 2: Launch Audible
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(launchIntent)
-            android.util.Log.d("SwitchBox", "Audible launched, waiting for it to initialize")
+            android.util.Log.d(TAG, "Audible launched, starting session discovery")
             
-            // Wait 4 seconds for Audible to initialize
-            Thread {
-                Thread.sleep(4000)
-                
-                // Send targeted media button intent directly to Audible
-                val downIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                    setPackage("com.audible.application")
-                    putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-                }
-                val upIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                    setPackage("com.audible.application")
-                    putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-                }
-                
-                context.sendBroadcast(downIntent)
-                Thread.sleep(50)
-                context.sendBroadcast(upIntent)
-                
-                android.util.Log.d("SwitchBox", "Targeted PLAY intent sent to Audible")
-                
-                Handler(Looper.getMainLooper()).post {
-                    result.success("launched_and_played")
-                }
-            }.start()
+            // Step 3: Start retry loop to find Audible's MediaSession and play
+            // Wait initial 500ms then begin retry cycle
+            Handler(Looper.getMainLooper()).postDelayed({
+                playAudibleWithRetry()
+            }, 500)
+            
+            result.success("launched_and_playing")
             
         } catch (e: Exception) {
-            android.util.Log.e("SwitchBox", "Failed to launch and play Audible: ${e.message}")
+            android.util.Log.e(TAG, "Failed to launch and play Audible: ${e.message}")
             result.error("LAUNCH_FAILED", "Failed to launch Audible: ${e.message}", null)
         }
     }
@@ -192,27 +230,19 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             try {
                 val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                
-                // Send DOWN event (returns Unit, not Boolean)
                 audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-                
-                // Small delay between events
                 Thread.sleep(50)
-                
-                // Send UP event
                 audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
-                
                 success = true
-                android.util.Log.d("SwitchBox", "Media key dispatched: $keyCode")
+                android.util.Log.d(TAG, "Media key dispatched: $keyCode")
             } catch (e: Exception) {
-                android.util.Log.e("SwitchBox", "dispatchMediaKeyEvent failed: ${e.message}")
+                android.util.Log.e(TAG, "dispatchMediaKeyEvent failed: ${e.message}")
             }
         }
         
-        // Method 2: Broadcast intent (works with most music apps, deprecated but reliable)
+        // Method 2: Broadcast intent (deprecated but reliable fallback)
         if (!success) {
             try {
-                // Send ordered broadcast so media apps can consume it
                 val downIntent = Intent(Intent.ACTION_MEDIA_BUTTON)
                 downIntent.putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
                 context.sendOrderedBroadcast(downIntent, null)
@@ -223,9 +253,9 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
                 upIntent.putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, keyCode))
                 context.sendOrderedBroadcast(upIntent, null)
                 
-                android.util.Log.d("SwitchBox", "Media key broadcast sent: $keyCode")
+                android.util.Log.d(TAG, "Media key broadcast sent: $keyCode")
             } catch (e: Exception) {
-                android.util.Log.e("SwitchBox", "Broadcast failed: ${e.message}")
+                android.util.Log.e(TAG, "Broadcast failed: ${e.message}")
             }
         }
     }
@@ -243,71 +273,53 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
             context.sendBroadcast(downIntent)
             Thread.sleep(50)
             context.sendBroadcast(upIntent)
-            android.util.Log.d("SwitchBox", "Media key sent to $packageName: $keyCode")
+            android.util.Log.d(TAG, "Media key sent to $packageName: $keyCode")
         } catch (e: Exception) {
-            android.util.Log.e("SwitchBox", "Failed to send media key to $packageName: ${e.message}")
+            android.util.Log.e(TAG, "Failed to send media key to $packageName: ${e.message}")
         }
     }
 
-    private fun launchYouTubeMusicNative(result: MethodChannel.Result) {
+    private fun launchYouTubeMusic(result: MethodChannel.Result) {
         try {
-            // Check if YouTube Music is installed
             val packageManager = context.packageManager
-            val launchIntent = packageManager.getLaunchIntentForPackage("com.google.android.apps.youtube.music")
+            val launchIntent = packageManager.getLaunchIntentForPackage(YOUTUBE_MUSIC_PACKAGE)
             
-            if (launchIntent == null) {
-                android.util.Log.w("SwitchBox", "YouTube Music not installed")
-                result.success("not_installed")
-                return
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launchIntent)
+                result.success(true)
+                android.util.Log.d(TAG, "YouTube Music launched successfully")
+            } else {
+                result.success(false)
+                android.util.Log.w(TAG, "YouTube Music not installed")
             }
-            
-            // Launch YouTube Music
-            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(launchIntent)
-            android.util.Log.d("SwitchBox", "YouTube Music launched, waiting for it to initialize")
-            
-            // Wait 4 seconds for YouTube Music to initialize
-            Thread {
-                Thread.sleep(4000)
-                
-                // Send targeted media button intent directly to YouTube Music
-                val downIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                    setPackage("com.google.android.apps.youtube.music")
-                    putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
-                }
-                val upIntent = Intent(Intent.ACTION_MEDIA_BUTTON).apply {
-                    setPackage("com.google.android.apps.youtube.music")
-                    putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY))
-                }
-                
-                context.sendBroadcast(downIntent)
-                Thread.sleep(50)
-                context.sendBroadcast(upIntent)
-                
-                android.util.Log.d("SwitchBox", "Targeted PLAY intent sent to YouTube Music")
-                
-                Handler(Looper.getMainLooper()).post {
-                    result.success("launched_and_played")
-                }
-            }.start()
-            
         } catch (e: Exception) {
-            android.util.Log.e("SwitchBox", "Failed to launch YouTube Music: ${e.message}")
+            android.util.Log.e(TAG, "Failed to launch YouTube Music: ${e.message}")
             result.error("LAUNCH_FAILED", "Failed to launch YouTube Music: ${e.message}", null)
+        }
+    }
+
+    private fun _sendMediaPlay(result: MethodChannel.Result) {
+        try {
+            sendMediaButton(KeyEvent.KEYCODE_MEDIA_PLAY)
+            result.success(true)
+        } catch (e: Exception) {
+            android.util.Log.e(TAG, "Failed to send media play: ${e.message}")
+            result.error("SEND_FAILED", "Failed to send media play: ${e.message}", null)
         }
     }
 }
 
 /**
  * MediaDiagnosticRecorder - Singleton for recording media button events via BroadcastReceiver
- * for diagnostic purposes. Uses ACTION_MEDIA_BUTTON broadcast only - no system permissions needed.
+ * for diagnostic purposes.
  */
 class MediaDiagnosticRecorder private constructor(private val context: Context) {
     
     private val logList = mutableListOf<String>()
     private var isRecording = false
     private val maxLogSize = 100
-    private var mediaButtonReceiver: BroadcastReceiver? = null
+    private var mediaButtonReceiver: android.content.BroadcastReceiver? = null
     private val dateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     
     companion object {
@@ -330,19 +342,18 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         logList.clear()
         addLog("Recording started")
         
-        // Register media button receiver
-        mediaButtonReceiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context?, intent: Intent?) {
+        mediaButtonReceiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: android.content.Intent?) {
                 if (!isRecording) return
                 
                 intent?.let { 
                     val action = it.action
-                    if (action == Intent.ACTION_MEDIA_BUTTON) {
+                    if (action == android.content.Intent.ACTION_MEDIA_BUTTON) {
                         val keyEvent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            it.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+                            it.getParcelableExtra(android.content.Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
                         } else {
                             @Suppress("DEPRECATION")
-                            it.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+                            it.getParcelableExtra(android.content.Intent.EXTRA_KEY_EVENT)
                         }
                         
                         val keyCode = keyEvent?.keyCode?.toString() ?: "none"
@@ -355,8 +366,8 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         }
         
         try {
-            val filter = IntentFilter(Intent.ACTION_MEDIA_BUTTON).apply {
-                priority = 999  // High priority to receive before media apps
+            val filter = android.content.IntentFilter(android.content.Intent.ACTION_MEDIA_BUTTON).apply {
+                priority = 999
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(mediaButtonReceiver, filter, Context.RECEIVER_EXPORTED)
@@ -372,7 +383,6 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
     fun stopRecording(): List<String> {
         isRecording = false
         
-        // Unregister receiver
         mediaButtonReceiver?.let {
             try {
                 context.unregisterReceiver(it)
@@ -399,7 +409,6 @@ class MediaDiagnosticRecorder private constructor(private val context: Context) 
         val logEntry = "[$timestamp] $message"
         logList.add(logEntry)
         
-        // Keep only last 100 entries
         while (logList.size > maxLogSize) {
             logList.removeAt(0)
         }
