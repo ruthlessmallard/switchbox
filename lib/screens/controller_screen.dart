@@ -3,7 +3,6 @@ import '../widgets/round_display.dart';
 import '../widgets/chunky_button.dart';
 import '../services/media_controller.dart';
 import '../services/spen_handler.dart';
-import 'diagnostic_screen.dart';
 import 'settings_screen.dart';
 
 class ControllerScreen extends StatefulWidget {
