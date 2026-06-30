@@ -4,6 +4,7 @@ import '../widgets/chunky_button.dart';
 import '../services/media_controller.dart';
 import '../services/spen_handler.dart';
 import 'diagnostic_screen.dart';
+import 'settings_screen.dart';
 
 class ControllerScreen extends StatefulWidget {
   const ControllerScreen({super.key});
@@ -82,6 +83,13 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
+  void _openSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const SettingsScreen()),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,6 +97,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.settings, color: Colors.white70),
+            onPressed: _openSettings,
+            tooltip: 'Settings',
+          ),
           IconButton(
             icon: const Icon(Icons.bug_report, color: Colors.white70),
             onPressed: _openDiagnostic,
