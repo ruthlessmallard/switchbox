@@ -42,26 +42,26 @@ class _ControllerScreenState extends State<ControllerScreen> {
     });
   }
 
-  // Button 1: Audible (tap) / Global Play/Pause (long)
+  // Button 1: Audible (tap) / Skip Back 30s (long)
   void _handleButton1Press() {
     _updateDisplay('AUDIBLE', 'BOOK', scroll: true);
     _mediaController.launchAudible();
   }
 
   void _handleButton1LongPress() {
-    _updateDisplay('PLAY/PAUSE', 'GLOBAL', scroll: true);
-    _mediaController.playPause();
+    _updateDisplay('SKIP', '-30 SEC', scroll: true);
+    _mediaController.skipBackward30();
   }
 
-  // Button 2: YouTube Music (tap) / Skip Back 30s (long)
+  // Button 2: YouTube Music (tap) / Global Play/Pause (long)
   void _handleButton2Press() {
     _updateDisplay('YOUTUBE', 'MUSIC', scroll: true);
     _mediaController.launchYouTubeMusic();
   }
 
   void _handleButton2LongPress() {
-    _updateDisplay('SKIP', '-30 SEC', scroll: true);
-    _mediaController.skipBackward30();
+    _updateDisplay('PLAY/PAUSE', 'GLOBAL', scroll: true);
+    _mediaController.playPause();
   }
 
   // Button 3: Reject call + SMS (tap) / Gemini voice (long)
