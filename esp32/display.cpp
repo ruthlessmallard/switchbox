@@ -19,6 +19,9 @@
 
 Display::Display() {
     currentColor = DEFAULT_COLOR;
+    backgroundColor = DEFAULT_BG_COLOR;
+    baseBrightness = 80;
+    brightnessOffset = BRIGHTNESS_OFFSET_DEFAULT;
     marqueeBuffer[0] = '\0';
     marqueeOffset = 0;
     lastMarqueeStep = 0;
@@ -37,10 +40,10 @@ void Display::begin() {
     SPI.setFrequency(40000000);  // 40MHz
     
     gc9a01Init();
-    setBrightness(80);
+    applyBrightness();  // Apply initial brightness with offset
     
-    clear(0x0000);
-    drawStatus("SWITCHBOX");
+    clear(backgroundColor);
+    drawStatus("SWITCHBOX\nMINE READY");
     refresh();
 }
 
@@ -63,12 +66,41 @@ void Display::gc9a01Init() {
 }
 
 void Display::setBrightness(uint8_t percent) {
-    uint8_t duty = map(percent, 0, 100, 0, 255);
+    baseBrightness = constrain(percent, 0, 100);
+    applyBrightness();
+}
+
+void Display::setBrightnessOffset(int8_t offset) {
+    brightnessOffset = constrain(offset, BRIGHTNESS_OFFSET_MIN, BRIGHTNESS_OFFSET_MAX);
+    applyBrightness();
+}
+
+int8_t Display::getBrightnessOffset() const {
+    return brightnessOffset;
+}
+
+void Display::setBackgroundColor(uint16_t rgb565) {
+    backgroundColor = rgb565;
+}
+
+uint16_t Display::getBackgroundColor() const {
+    return backgroundColor;
+}
+
+void Display::applyBrightness() {
+    // Apply offset to base brightness
+    int16_t adjusted = (int16_t)baseBrightness + brightnessOffset;
+    adjusted = constrain(adjusted, 0, 100);
+    
+    uint8_t duty = map(adjusted, 0, 100, 0, 255);
     analogWrite(TFT_BL, duty);
 }
 
 void Display::clear(uint16_t color) {
-    fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, color);
+    // If color is 0xFFFF (white), use the configured background color
+    // This allows explicit clearing to a specific color, or default behavior
+    uint16_t clearColor = (color == 0xFFFF) ? backgroundColor : color;
+    fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, clearColor);
 }
 
 void Display::drawText(const char *text, int16_t x, int16_t y, uint16_t color, uint8_t size) {
@@ -99,7 +131,7 @@ void Display::drawSticky(const char *stickyText, uint8_t secondsRemaining) {
 
 void Display::drawStatus(const char *status) {
     // Big centered status text
-    clear(0x0000);
+    clear(backgroundColor);
     drawCenteredText(status, SCREEN_HEIGHT / 2 - 10, currentColor, 3);
     refresh();
 }

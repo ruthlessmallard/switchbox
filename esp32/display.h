@@ -14,8 +14,14 @@ public:
     void begin();
     
     // Screen management
-    void clear(uint16_t color = 0x0000);
-    void setBrightness(uint8_t percent);  // 0-100
+    void clear(uint16_t color = 0xFFFF);  // Uses background color by default
+    void setBrightness(uint8_t percent);  // 0-100 base, offset applied internally
+    
+    // Configuration
+    void setBrightnessOffset(int8_t offset);  // -50 to +50
+    int8_t getBrightnessOffset() const;
+    void setBackgroundColor(uint16_t rgb565);
+    uint16_t getBackgroundColor() const;
     
     // Text rendering (basic, no font library yet)
     void drawText(const char *text, int16_t x, int16_t y, uint16_t color, uint8_t size = 2);
@@ -38,8 +44,12 @@ private:
     void setAddrWindow(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2);
     void writePixel(uint16_t color);
     void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+    void applyBrightness();  // Apply current brightness with offset
     
     uint16_t currentColor;
+    uint16_t backgroundColor;
+    uint8_t baseBrightness;   // 0-100 base brightness
+    int8_t brightnessOffset;  // -50 to +50 offset
     char marqueeBuffer[128];
     uint16_t marqueeOffset;
     unsigned long lastMarqueeStep;

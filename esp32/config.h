@@ -58,6 +58,24 @@
 // Default amber color (RGB565)
 #define DEFAULT_COLOR   0xFD20  // Warm amber
 
+// ===== DISPLAY CONFIGURATION =====
+// Brightness offset range (-50 to +50 percent)
+#define BRIGHTNESS_OFFSET_MIN   -50
+#define BRIGHTNESS_OFFSET_MAX   50
+#define BRIGHTNESS_OFFSET_DEFAULT 0
+
+// Default background color for truck dash matching (RGB565)
+// Amber #FFAA00 in RGB565 = 0xFD20 (matches DEFAULT_COLOR)
+#define DEFAULT_BG_COLOR_AMBER  0xFD20  // #FFAA00 - Classic truck dash amber
+#define DEFAULT_BG_COLOR_BLUE   0x041F  // #0066FF - Cool blue
+#define DEFAULT_BG_COLOR_RED    0xF800  // #CC0000 - Warning red
+#define DEFAULT_BG_COLOR_GREEN  0x05E0  // #00AA00 - Status green
+#define DEFAULT_BG_COLOR_WHITE  0xFFFF  // #FFFFFF - Full white
+#define DEFAULT_BG_COLOR_BLACK  0x0000  // #000000 - Black/off
+
+// Default background color (amber for truck dash matching)
+#define DEFAULT_BG_COLOR        DEFAULT_BG_COLOR_AMBER
+
 // ===== PROTOCOL =====
 // JSON messages over UDP
 // Button -> Phone: {"type":"button","id":1,"action":"short"}
