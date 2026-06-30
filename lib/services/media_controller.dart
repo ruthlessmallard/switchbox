@@ -95,11 +95,11 @@ class MediaController {
     }
   }
 
-  /// Skip backward 30 seconds (Audible)
+  /// Skip backward 30 seconds (YouTube Music)
   Future<void> skipBackward30() async {
-    developer.log('Skip -30s', name: 'SwitchBox');
+    developer.log('Skip -30s YouTube Music', name: 'SwitchBox');
     try {
-      await _channel.invokeMethod('rewind');
+      await _channel.invokeMethod('rewindYouTubeMusic');
     } catch (e) {
       developer.log('Error skipping backward: $e', name: 'SwitchBox');
     }

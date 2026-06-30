@@ -62,6 +62,9 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
                     sendMediaButton(KeyEvent.KEYCODE_MEDIA_REWIND)
                     result.success(null)
                 }
+                "rewindYouTubeMusic" -> {
+                    rewindYouTubeMusic(result)
+                }
                 "launchAudible" -> {
                     launchAudible(result)
                 }
@@ -301,6 +304,32 @@ class MediaButtonPlugin(private val context: Context) : MethodChannel.MethodCall
         } else {
             android.util.Log.d(TAG, "YouTube Music session not found, using broadcast fallback")
             sendMediaButtonToPackage(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, YOUTUBE_MUSIC_PACKAGE)
+            result.success(false)
+        }
+    }
+
+    /**
+     * Rewind/skip backward in YouTube Music using its specific MediaController.
+     * Falls back to broadcast if MediaSessionManager isn't available.
+     */
+    private fun rewindYouTubeMusic(result: MethodChannel.Result) {
+        val sessions = getActiveMediaSessions()
+        val ytmController = sessions.firstOrNull { it.packageName == YOUTUBE_MUSIC_PACKAGE }
+        
+        if (ytmController != null) {
+            try {
+                ytmController.transportControls.rewind()
+                android.util.Log.d(TAG, "YouTube Music rewind via MediaController")
+                result.success(true)
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Failed to rewind YouTube Music: ${e.message}")
+                // Fallback to broadcast
+                sendMediaButtonToPackage(KeyEvent.KEYCODE_MEDIA_REWIND, YOUTUBE_MUSIC_PACKAGE)
+                result.success(false)
+            }
+        } else {
+            android.util.Log.d(TAG, "YouTube Music session not found, using broadcast fallback")
+            sendMediaButtonToPackage(KeyEvent.KEYCODE_MEDIA_REWIND, YOUTUBE_MUSIC_PACKAGE)
             result.success(false)
         }
     }
